@@ -45,7 +45,7 @@ const crawler = new CheerioCrawler({
     requestHandler: async ({ request, $, log }) => {
         log.info('Processing page:', { url: request.loadedUrl });
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
-        console.log('from requestHandler: request.userData:', request.userData);
+        // console.log('from requestHandler: request.userData:', request.userData);
 
         // Set enqueue options
         const linksToEnqueueOptions = {
@@ -109,7 +109,7 @@ for (const startUrl of startUrls) {
             };
         }
     }
-    console.log('from main: adding requests: startUrl:', startUrl);
+    // console.log('from main: adding requests: startUrl:', startUrl);
 
     await crawler.addRequests([{
         url: startUrl.url,
