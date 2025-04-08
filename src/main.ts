@@ -14,16 +14,10 @@ interface Input {
     sameDomain: boolean;
 }
 
-// !!!
-// TODO: 
-// - devo controllare "referrer" che per le request aggiunte non c'è. 
-// - anche mettere sempre l'originalStartUrl che servirà per merge finale
-
 await Actor.init();
 
 const input = await Actor.getInput<Input>();
 if (!input) throw new Error('There is no input, please provide some.');
-
 const { startUrls, maxRequestsPerStartUrl, maxRequestsPerCrawl, maxDepth, sameDomain } = input;
 
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
@@ -43,7 +37,7 @@ if (maxRequestsPerStartUrl) {
 const requestQueue = await Actor.openRequestQueue();
 
 const crawler = new CheerioCrawler({
-    // requestList, // potrei evitare anche questi se faccio addRequest prima di crawler.run
+    // requestList,
     requestQueue, 
     proxyConfiguration,
     maxRequestsPerCrawl,
@@ -64,11 +58,10 @@ const crawler = new CheerioCrawler({
             immobiliareId,
             originalUrl,
             depth,
-            // These options makes the enqueueUrls call stateful. It would be better to refactor this.
+            // TODO: These options makes the enqueueUrls call stateful. It would be better to refactor this.
             maxRequestsPerStartUrl,
             requestsPerStartUrlCounter,
         };
-        // console.log('from requestHandler: linksToEnqueueOptions:', linksToEnqueueOptions);
 
         // Enqueue all links on the page
         if (depth < maxDepth) {
@@ -76,7 +69,6 @@ const crawler = new CheerioCrawler({
         }
 
         // Generate result
-        // const { userData: { depth, referrer } } = request;
         const url = request.url; // add also request.loadedUrl
         const html = $.html();
 
@@ -132,7 +124,7 @@ for (const startUrl of startUrls) {
 
 await crawler.run();
 
-// Add this line to export to JSON.
+// TODO: REMOVE this line when on apify platform OR add condition apify isAtHome
 await Dataset.exportToJSON('results');
 
 await Actor.exit();

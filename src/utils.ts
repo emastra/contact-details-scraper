@@ -10,7 +10,6 @@ export function getDomain(url: string): string | null {
 }
 
 export const enqueueUrls = async (options: any = {}) => {
-  // console.log('from enqueueUrls: options.immobiliareId:', options.immobiliareId);
   const {
       $,
       requestQueue,
@@ -29,11 +28,15 @@ export const enqueueUrls = async (options: any = {}) => {
 
   const tempUserData = { depth: depth + 1, currentUrl, originalUrl, immobiliareId };
   const requestOptions = createRequestOptions(urls, tempUserData);
-  // console.log('Created request options (slice, to check structure):', requestOptions.slice(0, 2));
 
   const requests = createRequests(requestOptions);
-  // console.log('Created requests (slice, to check structure):', requests.slice(0, 2));
-  await addRequestsToQueue({ requests, requestQueue, startUrl: originalUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
+  await addRequestsToQueue({ 
+    requests, 
+    requestQueue, 
+    startUrl: originalUrl, 
+    maxRequestsPerStartUrl, 
+    requestsPerStartUrlCounter 
+  });
 };
 
 // TODO: check original func qunado usi playwright: https://github.com/vdrmota/Social-Media-and-Contact-Info-Extractor/blob/master/src/helpers.js#L9
@@ -70,12 +73,6 @@ function createRequestOptions(urls: any, { depth, currentUrl, originalUrl, immob
     })
     .filter(({ url }: any) => !url.match(/\.(jp(e)?g|bmp|png|mp3|m4a|mkv|avi)$/gi))
     .map(({ url }: any) => {
-      // const rqOptsWithData = rqOpts;
-      // rqOptsWithData.userData = { 
-      //   ...rqOpts.userData, 
-      //   ...tempUserData // !! only depth here
-      // };
-      // return rqOptsWithData;
       return {
         url,
         userData: {
@@ -121,7 +118,7 @@ async function addRequestsToQueue({
   requestsPerStartUrlCounter,
 }: any) {
   for (const request of requests) {
-    // Debugging: Check if the request is valid
+    // Check if the request is valid
     if (!request) {
       log.error(`Invalid request found: ${JSON.stringify(request)}`);
       continue; // Skip invalid requests
@@ -129,10 +126,8 @@ async function addRequestsToQueue({
 
     if (maxRequestsPerStartUrl) {
       if (requestsPerStartUrlCounter[startUrl].counter < maxRequestsPerStartUrl) {
-        // console.log('Request being added:', request);
         // request.userData.startUrl = startUrl; // We already have originalUrl in userData
         const { wasAlreadyPresent } = await requestQueue.addRequest(request);
-        // console.log('Request added:', request);
         if (!wasAlreadyPresent) {
           requestsPerStartUrlCounter[startUrl].counter++;
         }
