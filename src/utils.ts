@@ -167,3 +167,63 @@ export function extractWhatsAppNumbersFromCheerio($: CheerioAPI): { whatsapps: s
   return { whatsapps: Array.from(whatsapps) };
 }
 
+export function sanitizeStartUrls(startUrls: any[]) {
+  return startUrls.filter((entry, index) => {
+      if (
+          entry &&
+          typeof entry === "object" &&
+          typeof entry.url === "string" &&
+          isValidUrlString(entry.url)
+      ) {
+          // Normalize the URL (e.g. trim whitespace)
+          entry.url = entry.url.trim();
+          return true;
+      } else {
+          console.warn(`⛔️ Invalid URL skipped at index ${index}:`, entry?.url);
+          return false;
+      }
+  });
+}
+
+function isValidUrlString(url: string): boolean {
+  try {
+      const parsed = new URL(url.trim());
+      return !!parsed.protocol && !!parsed.hostname;
+  } catch {
+      return false;
+  }
+}
+
+// async function findBadRequest(requests: any[]) {
+//   if (requests.length === 1) {
+//       try {
+//           await crawler.addRequests(requests);
+//           console.log("✅ No error with:", requests[0]);
+//       } catch (err) {
+//           console.error("❌ Bad request found:", requests[0]);
+//           console.error("Error:", err);
+//       }
+//       return;
+//   }
+
+//   const mid = Math.floor(requests.length / 2);
+//   const firstHalf = requests.slice(0, mid);
+//   const secondHalf = requests.slice(mid);
+
+//   try {
+//       await crawler.addRequests(firstHalf);
+//       console.log(`✅ First half (${firstHalf.length}) passed`);
+//   } catch {
+//       console.warn(`❌ First half (${firstHalf.length}) failed — diving in`);
+//       await findBadRequest(firstHalf);
+//   }
+
+//   try {
+//       await crawler.addRequests(secondHalf);
+//       console.log(`✅ Second half (${secondHalf.length}) passed`);
+//   } catch {
+//       console.warn(`❌ Second half (${secondHalf.length}) failed — diving in`);
+//       await findBadRequest(secondHalf);
+//   }
+// }
+

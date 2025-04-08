@@ -36,6 +36,46 @@ if (maxRequestsPerStartUrl) {
 // and normalizeUrls at line 42 of the same file above.
 
 const requestQueue = await Actor.openRequestQueue();
+// const requestList = await RequestList.open('start-urls');
+
+// // update maxRequestsPerStartUrl if necessary
+// if (maxRequestsPerStartUrl) {
+//     for (const startUrl of startUrls) {
+//         if (!requestsPerStartUrlCounter[startUrl.url]) {
+//             requestsPerStartUrlCounter[startUrl.url] = {
+//                 counter: 1,
+//                 wasLogged: false,
+//             };
+//         }
+//     }
+// }
+// // Add requests to queue
+// await requestQueue.addRequests(startUrls.map((startUrl) => ({
+//     url: startUrl.url,
+//     userData: {
+//         depth: 0,
+//         referrer: null,
+//         originalUrl: startUrl.url,
+//         immobiliareId: startUrl.immobiliareId,
+//     },
+// })));
+
+// requestList.requests.forEach((req) => {
+//     req.userData = {
+//         depth: 0,
+//         referrer: null,
+//         startUrl: req.url,
+//     };
+
+//     if (maxRequestsPerStartUrl) {
+//         if (!requestsPerStartUrlCounter[req.url]) {
+//             requestsPerStartUrlCounter[req.url] = {
+//                 counter: 1,
+//                 wasLogged: false,
+//             };
+//         }
+//     }
+// });
 
 const crawler = new CheerioCrawler({
     // requestList,
@@ -100,8 +140,13 @@ const crawler = new CheerioCrawler({
     },
 });
 
+// const sanitizedRequests = startUrls.map(utils.sanitizeRequest);
+// await findBadRequest(sanitizedRequests);
+
+const cleanStartUrls = utils.sanitizeStartUrls(startUrls);
+
 // Add requests to queue
-for (const startUrl of startUrls) {
+for (const startUrl of cleanStartUrls) {
     // update maxRequestsPerStartUrl if necessary
     if (maxRequestsPerStartUrl) {
         if (!requestsPerStartUrlCounter[startUrl.url]) {
@@ -130,3 +175,4 @@ await crawler.run();
 await Dataset.exportToJSON('results');
 
 await Actor.exit();
+
