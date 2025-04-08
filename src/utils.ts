@@ -141,3 +141,29 @@ async function addRequestsToQueue({
   }
 }
 
+export function extractWhatsAppNumbersFromCheerio($: CheerioAPI): { whatsapps: string[]; } {
+  const whatsapps = new Set<string>();
+
+  const regex = /https?:\/\/(?:wa\.me|api\.whatsapp\.com\/send\?phone=)(\d{6,15})/gi;
+
+  // Search in full HTML
+  const html: string = $.html();
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(html)) !== null) {
+    whatsapps.add(match[1]);
+  }
+
+  // Also search inside <script> tags
+  $('script').each((_, el) => {
+    const scriptContent = $(el).html();
+    if (scriptContent) {
+      let scriptMatch: RegExpExecArray | null;
+      while ((scriptMatch = regex.exec(scriptContent)) !== null) {
+        whatsapps.add(scriptMatch[1]);
+      }
+    }
+  });
+
+  return { whatsapps: Array.from(whatsapps) };
+}
+

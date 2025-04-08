@@ -2,6 +2,7 @@ import { Actor } from 'apify';
 import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social } from 'crawlee';
 // import { router } from './routes.js';
 import * as utils from './utils.js';
+import { CheerioAPI } from 'cheerio';
 
 // TODO: Install Playwright dynamically at runtime:
 // https://chatgpt.com/c/67e13f81-a190-8013-bcd9-7410801ffa2a
@@ -84,8 +85,9 @@ const crawler = new CheerioCrawler({
 
         // Extract and save handles, emails, phone numbers
         const socialHandles = social.parseHandlesFromHtml(html, { text: $.text(), $ });
+        const whatsappResult = utils.extractWhatsAppNumbersFromCheerio($ as CheerioAPI);
 
-        Object.assign(result, socialHandles);
+        Object.assign(result, socialHandles, whatsappResult);
 
         // Store results
         await Actor.pushData(result);
