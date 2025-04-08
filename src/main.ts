@@ -83,8 +83,10 @@ const crawler = new CheerioCrawler({
         const result = {
             // html,
             depth,
+            immobiliareId,
+            startUrl: originalUrl,
             referrerUrl: referrer,
-            url,
+            currentUrl: url,
             domain: utils.getDomain(url)
         };
 

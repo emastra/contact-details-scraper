@@ -10,7 +10,7 @@ export function getDomain(url: string): string | null {
 }
 
 export const enqueueUrls = async (options: any = {}) => {
-  console.log('from enqueueUrls: options.immobiliareId:', options.immobiliareId);
+  // console.log('from enqueueUrls: options.immobiliareId:', options.immobiliareId);
   const {
       $,
       requestQueue,
@@ -29,10 +29,10 @@ export const enqueueUrls = async (options: any = {}) => {
 
   const tempUserData = { depth: depth + 1, currentUrl, originalUrl, immobiliareId };
   const requestOptions = createRequestOptions(urls, tempUserData);
-  console.log('Created request options (slice, to check structure):', requestOptions.slice(0, 2));
+  // console.log('Created request options (slice, to check structure):', requestOptions.slice(0, 2));
 
   const requests = createRequests(requestOptions);
-  console.log('Created requests (slice, to check structure):', requests.slice(0, 2));
+  // console.log('Created requests (slice, to check structure):', requests.slice(0, 2));
   await addRequestsToQueue({ requests, requestQueue, startUrl: originalUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
 };
 
@@ -129,10 +129,10 @@ async function addRequestsToQueue({
 
     if (maxRequestsPerStartUrl) {
       if (requestsPerStartUrlCounter[startUrl].counter < maxRequestsPerStartUrl) {
-        console.log('Request being added:', request);
+        // console.log('Request being added:', request);
         // request.userData.startUrl = startUrl; // We already have originalUrl in userData
         const { wasAlreadyPresent } = await requestQueue.addRequest(request);
-        console.log('Request added:', request);
+        // console.log('Request added:', request);
         if (!wasAlreadyPresent) {
           requestsPerStartUrlCounter[startUrl].counter++;
         }
