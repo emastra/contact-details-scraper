@@ -41,26 +41,6 @@ if (maxRequestsPerStartUrl) {
 // and normalizeUrls at line 42 of the same file above.
 
 const requestQueue = await Actor.openRequestQueue();
-// const requestList = await RequestList.open('start-urls', startUrls);
-
-// potrei invece iterare startUrls e usare addRequest aggiungendo uerData lì? in quel caso nnon avrei bisogno di requestList
-// e di aggiungere RequestList e RequestQueue a CheerioCrawler
-// requestList.requests.forEach((req) => {
-//     req.userData = {
-//         depth: 0,
-//         referrer: null,
-//         startUrl: req.url,
-//     };
-
-//     if (maxRequestsPerStartUrl) {
-//         if (!requestsPerStartUrlCounter[req.url]) {
-//             requestsPerStartUrlCounter[req.url] = {
-//                 counter: 1,
-//                 wasLogged: false,
-//             };
-//         }
-//     }
-// });
 
 const crawler = new CheerioCrawler({
     // requestList, // potrei evitare anche questi se faccio addRequest prima di crawler.run
@@ -68,9 +48,10 @@ const crawler = new CheerioCrawler({
     proxyConfiguration,
     maxRequestsPerCrawl,
     // requestHandler: router,
-    requestHandler: async ({ request, $ }) => {
-        console.info('Processing page:', request.loadedUrl);
-        console.log('CHECK IF startUrl is in userData:', request.userData);
+    requestHandler: async ({ request, $, log }) => {
+        log.info('Processing page:', { url: request.loadedUrl });
+        // console.log('CHECK IF startUrl is in userData:', request.userData);
+        const { depth, referrer, startUrl, immobiliareId } = request.userData;
 
         // Set enqueue options
         const linksToEnqueueOptions = {
@@ -79,20 +60,20 @@ const crawler = new CheerioCrawler({
             selector: 'a',
             sameDomain,
             urlDomain: utils.getDomain(request.url),
-            startUrl: request.userData.startUrl,
-            depth: request.userData.depth,
+            startUrl,
+            depth,
             // These options makes the enqueueUrls call stateful. It would be better to refactor this.
             maxRequestsPerStartUrl,
             requestsPerStartUrlCounter,
         };
 
         // Enqueue all links on the page
-        if (request.userData.depth < maxDepth) {
+        if (depth < maxDepth) {
             await utils.enqueueUrls(linksToEnqueueOptions);
         }
 
         // Generate result
-        const { userData: { depth, referrer } } = request;
+        // const { userData: { depth, referrer } } = request;
         const url = request.url; // add also request.loadedUrl
         const html = $.html();
 

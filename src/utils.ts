@@ -9,6 +9,29 @@ export function getDomain(url: string): string | null {
   }
 }
 
+export const enqueueUrls = async (options: any = {}) => {
+  const {
+      $,
+      requestQueue,
+      selector = 'a',
+      sameDomain,
+      urlDomain,
+      depth,
+      startUrl,
+      maxRequestsPerStartUrl,
+      requestsPerStartUrlCounter,
+  } = options;
+
+  const urls = await extractUrlsFromPage($, startUrl, selector, sameDomain, urlDomain);
+
+  const requestOptions = createRequestOptions(urls, { depth: depth + 1 });
+  // console.log('Created request options...:', requestOptions.slice(0, 2));
+
+  const requests = createRequests(requestOptions);
+  console.log('Created requests...:', requests.slice(0, 2));
+  await addRequestsToQueue({ requests, requestQueue, startUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
+};
+
 // TODO: check original func qunado usi playwright: https://github.com/vdrmota/Social-Media-and-Contact-Info-Extractor/blob/master/src/helpers.js#L9
 async function extractUrlsFromPage(
   $: CheerioAPI,
@@ -44,7 +67,11 @@ function createRequestOptions(sources: any, userData: any = {}) {
     .filter(({ url }: any) => !url.match(/\.(jp(e)?g|bmp|png|mp3|m4a|mkv|avi)$/gi))
     .map((rqOpts: any) => {
       const rqOptsWithData = rqOpts;
-      rqOptsWithData.userData = { ...rqOpts.userData, ...userData };
+      rqOptsWithData.userData = { 
+        ...rqOpts.userData, // !! only depth here? o depth sta nel userData qui sotto. segui tutto il giro.
+        ...userData 
+      };
+
       return rqOptsWithData;
     });
 }
@@ -102,27 +129,4 @@ async function addRequestsToQueue({
     }
   }
 }
-
-export const enqueueUrls = async (options: any = {}) => {
-  const {
-      $,
-      requestQueue,
-      selector = 'a',
-      sameDomain,
-      urlDomain,
-      depth,
-      startUrl,
-      maxRequestsPerStartUrl,
-      requestsPerStartUrlCounter,
-  } = options;
-
-  const urls = await extractUrlsFromPage($, startUrl, selector, sameDomain, urlDomain);
-
-  const requestOptions = createRequestOptions(urls, { depth: depth + 1 });
-  console.log('Created request options...:', requestOptions.slice(0, 2));
-
-  const requests = createRequests(requestOptions);
-  console.log('Created requests...:', requests.slice(0, 2));
-  await addRequestsToQueue({ requests, requestQueue, startUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
-};
 
