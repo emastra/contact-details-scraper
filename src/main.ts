@@ -3,8 +3,11 @@ import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social } 
 import { router } from './routes.js';
 import * as utils from './utils.js';
 
+// TODO: Install Playwright dynamically at runtime:
+// https://chatgpt.com/c/67e13f81-a190-8013-bcd9-7410801ffa2a
+
 interface Input {
-    startUrls: string[];
+    startUrls: { url: string; immobiliareId: number }[];
     maxRequestsPerStartUrl: number;
     maxRequestsPerCrawl?: number;
     maxDepth: number;
@@ -23,9 +26,6 @@ if (!input) throw new Error('There is no input, please provide some.');
 
 const { startUrls, maxRequestsPerStartUrl, maxRequestsPerCrawl, maxDepth, sameDomain } = input;
 
-// TODO: Install Playwright dynamically at runtime:
-// https://chatgpt.com/c/67e13f81-a190-8013-bcd9-7410801ffa2a
-
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
 
 const requestsPerStartUrlCounter: any = (await Actor.getValue('requests-per-startUrl-counter')) || {};
@@ -41,62 +41,33 @@ if (maxRequestsPerStartUrl) {
 // and normalizeUrls at line 42 of the same file above.
 
 const requestQueue = await Actor.openRequestQueue();
-const requestList = await RequestList.open('start-urls', startUrls);
+// const requestList = await RequestList.open('start-urls', startUrls);
 
 // potrei invece iterare startUrls e usare addRequest aggiungendo uerData lì? in quel caso nnon avrei bisogno di requestList
 // e di aggiungere RequestList e RequestQueue a CheerioCrawler
-requestList.requests.forEach((req) => {
-    req.userData = {
-        depth: 0,
-        referrer: null,
-        startUrl: req.url,
-    };
+// requestList.requests.forEach((req) => {
+//     req.userData = {
+//         depth: 0,
+//         referrer: null,
+//         startUrl: req.url,
+//     };
 
-    if (maxRequestsPerStartUrl) {
-        if (!requestsPerStartUrlCounter[req.url]) {
-            requestsPerStartUrlCounter[req.url] = {
-                counter: 1,
-                wasLogged: false,
-            };
-        }
-    }
-});
-
-////////////////////
-
-// TIPS per quando useo in alternativa PlaywrightCrawlwer:
-/**
-launchContext: {
-            useIncognitoPages: true,
-        },
-        browserPoolOptions: {
-            useFingerprints: true,
-        },
-
-preNavigationHooks: [
-        async ({ blo }) => {
-            // Block the provided resourses extensions, plus the 'blockRequests' defaults: [".css", ".jpg", ".jpeg", ".png", ".svg", ".gif", ".woff", ".pdf", ".zip"]
-            await blockRequests({
-                extraUrlPatterns: ['adsbygoogle.js', '.woff2'],
-            });
-        },
-    ],
-    // !! e aggiungi pure waitforloadedcontent del vecchio gotofunction
-
-*/
+//     if (maxRequestsPerStartUrl) {
+//         if (!requestsPerStartUrlCounter[req.url]) {
+//             requestsPerStartUrlCounter[req.url] = {
+//                 counter: 1,
+//                 wasLogged: false,
+//             };
+//         }
+//     }
+// });
 
 const crawler = new CheerioCrawler({
-    requestList,
-    requestQueue, // potrei evitare anche questi se faccio addRequest prima di crawler.run
+    // requestList, // potrei evitare anche questi se faccio addRequest prima di crawler.run
+    requestQueue, 
     proxyConfiguration,
     maxRequestsPerCrawl,
     // requestHandler: router,
-    failedRequestHandler: async ({ request, error }) => {
-        console.error(`Request ${request.url} failed too many times`, error);
-        await Dataset.pushData({
-            '#debug': createRequestDebugInfo(request),
-        });
-    },
     requestHandler: async ({ request, $ }) => {
         console.info('Processing page:', request.loadedUrl);
         console.log('CHECK IF startUrl is in userData:', request.userData);
@@ -141,9 +112,39 @@ const crawler = new CheerioCrawler({
         // Store results
         await Actor.pushData(result);
     },
+    failedRequestHandler: async ({ request, error }) => {
+        console.error(`Request ${request.url} failed too many times`, error);
+        await Dataset.pushData({
+            '#debug': createRequestDebugInfo(request),
+        });
+    },
 });
 
+// Add requests to queue
+for (const startUrl of startUrls) {
+    // update maxRequestsPerStartUrl if necessary
+    if (maxRequestsPerStartUrl) {
+        if (!requestsPerStartUrlCounter[startUrl.url]) {
+            requestsPerStartUrlCounter[startUrl.url] = {
+                counter: 1,
+                wasLogged: false,
+            };
+        }
+    }
+
+    await crawler.addRequests([{
+        url: startUrl.url,
+        userData: {
+            depth: 0,
+            referrer: null,
+            startUrl: startUrl.url,
+            immobiliareId: startUrl.immobiliareId,
+        },
+    }]);
+}
+
 await crawler.run();
+
 // Add this line to export to JSON.
 await Dataset.exportToJSON('results');
 
