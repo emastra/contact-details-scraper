@@ -194,36 +194,3 @@ function isValidUrlString(url: string): boolean {
   }
 }
 
-// async function findBadRequest(requests: any[]) {
-//   if (requests.length === 1) {
-//       try {
-//           await crawler.addRequests(requests);
-//           console.log("✅ No error with:", requests[0]);
-//       } catch (err) {
-//           console.error("❌ Bad request found:", requests[0]);
-//           console.error("Error:", err);
-//       }
-//       return;
-//   }
-
-//   const mid = Math.floor(requests.length / 2);
-//   const firstHalf = requests.slice(0, mid);
-//   const secondHalf = requests.slice(mid);
-
-//   try {
-//       await crawler.addRequests(firstHalf);
-//       console.log(`✅ First half (${firstHalf.length}) passed`);
-//   } catch {
-//       console.warn(`❌ First half (${firstHalf.length}) failed — diving in`);
-//       await findBadRequest(firstHalf);
-//   }
-
-//   try {
-//       await crawler.addRequests(secondHalf);
-//       console.log(`✅ Second half (${secondHalf.length}) passed`);
-//   } catch {
-//       console.warn(`❌ Second half (${secondHalf.length}) failed — diving in`);
-//       await findBadRequest(secondHalf);
-//   }
-// }
-
