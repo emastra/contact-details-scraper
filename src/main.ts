@@ -1,6 +1,6 @@
 import { Actor } from 'apify';
 import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social } from 'crawlee';
-import { router } from './routes.js';
+// import { router } from './routes.js';
 import * as utils from './utils.js';
 
 // TODO: Install Playwright dynamically at runtime:
@@ -50,8 +50,8 @@ const crawler = new CheerioCrawler({
     // requestHandler: router,
     requestHandler: async ({ request, $, log }) => {
         log.info('Processing page:', { url: request.loadedUrl });
-        // console.log('CHECK IF startUrl is in userData:', request.userData);
-        const { depth, referrer, startUrl, immobiliareId } = request.userData;
+        const { depth, referrer, originalUrl, immobiliareId } = request.userData;
+        console.log('from requestHandler: request.userData:', request.userData);
 
         // Set enqueue options
         const linksToEnqueueOptions = {
@@ -60,12 +60,15 @@ const crawler = new CheerioCrawler({
             selector: 'a',
             sameDomain,
             urlDomain: utils.getDomain(request.url),
-            startUrl,
+            currentUrl: request.url, // or request.loadedUrl
+            immobiliareId,
+            originalUrl,
             depth,
             // These options makes the enqueueUrls call stateful. It would be better to refactor this.
             maxRequestsPerStartUrl,
             requestsPerStartUrlCounter,
         };
+        // console.log('from requestHandler: linksToEnqueueOptions:', linksToEnqueueOptions);
 
         // Enqueue all links on the page
         if (depth < maxDepth) {
@@ -112,13 +115,14 @@ for (const startUrl of startUrls) {
             };
         }
     }
+    console.log('from main: adding requests: startUrl:', startUrl);
 
     await crawler.addRequests([{
         url: startUrl.url,
         userData: {
             depth: 0,
             referrer: null,
-            startUrl: startUrl.url,
+            originalUrl: startUrl.url,
             immobiliareId: startUrl.immobiliareId,
         },
     }]);

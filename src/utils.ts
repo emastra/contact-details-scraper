@@ -10,32 +10,36 @@ export function getDomain(url: string): string | null {
 }
 
 export const enqueueUrls = async (options: any = {}) => {
+  console.log('from enqueueUrls: options.immobiliareId:', options.immobiliareId);
   const {
       $,
       requestQueue,
       selector = 'a',
       sameDomain,
       urlDomain,
+      currentUrl,
+      immobiliareId,
+      originalUrl,
       depth,
-      startUrl,
       maxRequestsPerStartUrl,
       requestsPerStartUrlCounter,
   } = options;
 
-  const urls = await extractUrlsFromPage($, startUrl, selector, sameDomain, urlDomain);
+  const urls = await extractUrlsFromPage($, currentUrl, selector, sameDomain, urlDomain);
 
-  const requestOptions = createRequestOptions(urls, { depth: depth + 1 });
-  // console.log('Created request options...:', requestOptions.slice(0, 2));
+  const tempUserData = { depth: depth + 1, currentUrl, originalUrl, immobiliareId };
+  const requestOptions = createRequestOptions(urls, tempUserData);
+  console.log('Created request options (slice, to check structure):', requestOptions.slice(0, 2));
 
   const requests = createRequests(requestOptions);
-  console.log('Created requests...:', requests.slice(0, 2));
-  await addRequestsToQueue({ requests, requestQueue, startUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
+  console.log('Created requests (slice, to check structure):', requests.slice(0, 2));
+  await addRequestsToQueue({ requests, requestQueue, startUrl: originalUrl, maxRequestsPerStartUrl, requestsPerStartUrlCounter });
 };
 
 // TODO: check original func qunado usi playwright: https://github.com/vdrmota/Social-Media-and-Contact-Info-Extractor/blob/master/src/helpers.js#L9
 async function extractUrlsFromPage(
   $: CheerioAPI,
-  pageUrl: string,
+  currentUrl: string,
   selector: string = 'a', 
   sameDomain: boolean, 
   urlDomain: string
@@ -50,13 +54,13 @@ async function extractUrlsFromPage(
     return linkDomain && (sameDomain ? linkDomain === urlDomain : true);
   });
 
-  log.info(`Found ${filteredLinks.length} links on ${pageUrl}`); // TODO: Oppure loggo sta cosa nel router, e così evito di passare pageUrl
+  log.info(`Found ${filteredLinks.length} links on ${currentUrl}`); // TODO: Oppure loggo sta cosa nel router, e così evito di passare pageUrl
   return filteredLinks;
 }
 
-function createRequestOptions(sources: any, userData: any = {}) {
-  return sources
-    .map((src: any) => (typeof src === 'string' ? { url: src } : src))
+function createRequestOptions(urls: any, { depth, currentUrl, originalUrl, immobiliareId }: any) {
+  return urls
+    .map((url: any) => (typeof url === 'string' ? { url } : url))
     .filter(({ url }: any) => {
       try {
         return new URL(url).href;
@@ -65,25 +69,37 @@ function createRequestOptions(sources: any, userData: any = {}) {
       }
     })
     .filter(({ url }: any) => !url.match(/\.(jp(e)?g|bmp|png|mp3|m4a|mkv|avi)$/gi))
-    .map((rqOpts: any) => {
-      const rqOptsWithData = rqOpts;
-      rqOptsWithData.userData = { 
-        ...rqOpts.userData, // !! only depth here? o depth sta nel userData qui sotto. segui tutto il giro.
-        ...userData 
-      };
-
-      return rqOptsWithData;
+    .map(({ url }: any) => {
+      // const rqOptsWithData = rqOpts;
+      // rqOptsWithData.userData = { 
+      //   ...rqOpts.userData, 
+      //   ...tempUserData // !! only depth here
+      // };
+      // return rqOptsWithData;
+      return {
+        url,
+        userData: {
+          depth,
+          referrer: currentUrl,
+          originalUrl,
+          immobiliareId,
+        }
+      }
     });
 }
 
 function createRequests(requestOptions: any, pseudoUrls?: any) {
+  // EARLY RETURN if pseudoUrls are not present
   if (!(pseudoUrls && pseudoUrls.length)) {
-    return requestOptions.map((opts: any) => ({
+    const requests = requestOptions.map((opts: any) => ({
       url: opts.url,
       userData: opts.userData || {},
     }));
+
+    return requests;
   }
 
+  // This part is skipped if pseudoUrls is missing or empty
   const requests: any[] = [];
   requestOptions.forEach((opts: any) => {
     pseudoUrls
@@ -99,10 +115,10 @@ function createRequests(requestOptions: any, pseudoUrls?: any) {
 
 async function addRequestsToQueue({ 
   requests, 
-  requestQueue, 
+  requestQueue,
+  startUrl,
   maxRequestsPerStartUrl, 
-  requestsPerStartUrlCounter, 
-  startUrl 
+  requestsPerStartUrlCounter,
 }: any) {
   for (const request of requests) {
     // Debugging: Check if the request is valid
@@ -114,14 +130,14 @@ async function addRequestsToQueue({
     if (maxRequestsPerStartUrl) {
       if (requestsPerStartUrlCounter[startUrl].counter < maxRequestsPerStartUrl) {
         console.log('Request being added:', request);
-        request.userData.startUrl = startUrl;
+        // request.userData.startUrl = startUrl; // We already have originalUrl in userData
         const { wasAlreadyPresent } = await requestQueue.addRequest(request);
         console.log('Request added:', request);
         if (!wasAlreadyPresent) {
           requestsPerStartUrlCounter[startUrl].counter++;
         }
       } else if (!requestsPerStartUrlCounter[startUrl].wasLogged) {
-        log.warning(`Enqueued max pages for start URL: ${startUrl}, will not enqueue any more`);
+        log.info(`Enqueued max pages for start URL: ${startUrl}, will not enqueue any more`);
         requestsPerStartUrlCounter[startUrl].wasLogged = true;
       }
     } else {
