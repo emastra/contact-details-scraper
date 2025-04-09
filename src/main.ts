@@ -23,6 +23,7 @@ const { startUrls, maxRequestsPerStartUrl, maxRequestsPerCrawl, maxDepth, sameDo
 
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
 
+// maxRequestsPerStartUrl stuff
 const requestsPerStartUrlCounter: any = (await Actor.getValue('requests-per-startUrl-counter')) || {};
 if (maxRequestsPerStartUrl) {
     const persistRequestsPerStartUrlCounter = async () => {
@@ -37,45 +38,6 @@ if (maxRequestsPerStartUrl) {
 
 const requestQueue = await Actor.openRequestQueue();
 // const requestList = await RequestList.open('start-urls');
-
-// // update maxRequestsPerStartUrl if necessary
-// if (maxRequestsPerStartUrl) {
-//     for (const startUrl of startUrls) {
-//         if (!requestsPerStartUrlCounter[startUrl.url]) {
-//             requestsPerStartUrlCounter[startUrl.url] = {
-//                 counter: 1,
-//                 wasLogged: false,
-//             };
-//         }
-//     }
-// }
-// // Add requests to queue
-// await requestQueue.addRequests(startUrls.map((startUrl) => ({
-//     url: startUrl.url,
-//     userData: {
-//         depth: 0,
-//         referrer: null,
-//         originalUrl: startUrl.url,
-//         immobiliareId: startUrl.immobiliareId,
-//     },
-// })));
-
-// requestList.requests.forEach((req) => {
-//     req.userData = {
-//         depth: 0,
-//         referrer: null,
-//         startUrl: req.url,
-//     };
-
-//     if (maxRequestsPerStartUrl) {
-//         if (!requestsPerStartUrlCounter[req.url]) {
-//             requestsPerStartUrlCounter[req.url] = {
-//                 counter: 1,
-//                 wasLogged: false,
-//             };
-//         }
-//     }
-// });
 
 const crawler = new CheerioCrawler({
     // requestList,
@@ -140,15 +102,12 @@ const crawler = new CheerioCrawler({
     },
 });
 
-// const sanitizedRequests = startUrls.map(utils.sanitizeRequest);
-// await findBadRequest(sanitizedRequests);
-
+// sanitize, if invalid urls exists addRequest may fail
 const cleanStartUrls = utils.sanitizeStartUrls(startUrls);
 
-// Add requests to queue
-for (const startUrl of cleanStartUrls) {
-    // update maxRequestsPerStartUrl if necessary
-    if (maxRequestsPerStartUrl) {
+// Init counters (if needed)
+if (maxRequestsPerStartUrl) {
+    for (const startUrl of cleanStartUrls) {
         if (!requestsPerStartUrlCounter[startUrl.url]) {
             requestsPerStartUrlCounter[startUrl.url] = {
                 counter: 1,
@@ -156,18 +115,18 @@ for (const startUrl of cleanStartUrls) {
             };
         }
     }
-    // console.log('from main: adding requests: startUrl:', startUrl);
-
-    await crawler.addRequests([{
-        url: startUrl.url,
-        userData: {
-            depth: 0,
-            referrer: null,
-            originalUrl: startUrl.url,
-            immobiliareId: startUrl.immobiliareId,
-        },
-    }]);
 }
+
+// Add requests to queue
+await crawler.addRequests(cleanStartUrls.map(startUrl => ({
+    url: startUrl.url,
+    userData: {
+        depth: 0,
+        referrer: null,
+        originalUrl: startUrl.url,
+        immobiliareId: startUrl.immobiliareId,
+    },
+})));
 
 await crawler.run();
 
@@ -175,6 +134,9 @@ await crawler.run();
 await Dataset.exportToJSON('results');
 
 await Actor.exit();
+
+
+//
 
 // // function used to find the culprit requests of: https://chatgpt.com/c/67f54c7b-54e8-8013-baf6-00c0a6eb634f
 // async function findBadRequest(requests: any[]) {
