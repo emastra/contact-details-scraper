@@ -1,5 +1,5 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social } from 'crawlee';
+import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social, log } from 'crawlee';
 // import { router } from './routes.js';
 import * as utils from './utils.js';
 import { CheerioAPI } from 'cheerio';
@@ -20,6 +20,7 @@ await Actor.init();
 const input = await Actor.getInput<Input>();
 if (!input) throw new Error('There is no input, please provide some.');
 const { startUrls, maxRequestsPerStartUrl, maxRequestsPerCrawl, maxDepth, sameDomain } = input;
+log.info(`startUrls has ${startUrls.length} items`);
 
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
 
@@ -45,10 +46,9 @@ const crawler = new CheerioCrawler({
     proxyConfiguration,
     maxRequestsPerCrawl,
     // requestHandler: router,
-    requestHandler: async ({ request, $, log }) => {
+    requestHandler: async ({ request, $ }) => {
         log.info('Processing page:', { url: request.loadedUrl });
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
-        // console.log('from requestHandler: request.userData:', request.userData);
 
         // Set enqueue options
         const linksToEnqueueOptions = {
@@ -104,6 +104,7 @@ const crawler = new CheerioCrawler({
 
 // sanitize, if invalid urls exists addRequest may fail
 const cleanStartUrls = utils.sanitizeStartUrls(startUrls);
+log.info(`cleanStartUrls has ${cleanStartUrls.length} items`);
 
 // Init counters (if needed)
 if (maxRequestsPerStartUrl) {
@@ -130,8 +131,10 @@ await crawler.addRequests(cleanStartUrls.map(startUrl => ({
 
 await crawler.run();
 
-// TODO: REMOVE this line when on apify platform OR add condition apify isAtHome
-await Dataset.exportToJSON('results');
+if (!Actor.isAtHome()) {
+    await Dataset.exportToJSON('results');
+    log.info('Results exported to JSON');
+}
 
 await Actor.exit();
 
