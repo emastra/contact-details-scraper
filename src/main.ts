@@ -1,6 +1,6 @@
 import { Actor, ProxyConfigurationOptions } from 'apify';
 import { CheerioCrawler, Dataset, createRequestDebugInfo, social, log } from 'crawlee';
-import { extractResultFromPage, sanitizeStartUrls } from './utils.js';
+import { extractResultFromPage, sanitizeStartUrls, isJunkUrl } from './utils.js';
 import { CheerioAPI } from 'cheerio';
 import { RequestLimiter, CrawlStatsTracker } from './utils.js';
 
@@ -26,6 +26,8 @@ const {
     proxyConfigurationOptions 
 } = input;
 log.info(`startUrls has ${startUrls.length} items`);
+
+const ENOUGH_NAV_LINKS = 3;
 
 const proxyConfiguration = await Actor.createProxyConfiguration(proxyConfigurationOptions);
 
@@ -68,11 +70,22 @@ const crawler = new CheerioCrawler({
 
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
 
-        statsTracker.registerRequest(originalUrl, depth);
-
         if (depth < maxDepth) {
+            let selectorToUse = 'a';
+            const isStartUrl = depth === 0 && request.url === originalUrl;
+
+            if (isStartUrl) {
+                const navLinks = $('nav a');
+                if (navLinks.length >= ENOUGH_NAV_LINKS) {
+                    selectorToUse = 'nav a';
+                    log.info(`Using 'nav a' on start URL ${request.url} with ${navLinks.length} links`);
+                } else {
+                    log.info(`'nav a' fallback to 'a' on ${request.url} (${navLinks.length} links)`);
+                }
+            }
+
             await enqueueLinks({
-                selector: 'a',
+                selector: selectorToUse,
                 requestQueue,
                 strategy: enqueueStrategy,
                 userData: {
@@ -82,8 +95,9 @@ const crawler = new CheerioCrawler({
                     immobiliareId,
                 },
                 transformRequestFunction: (req) => {
-                    if (requestLimiter.canRequest(originalUrl)) {
+                    if (!isJunkUrl(req.url) && requestLimiter.canRequest(originalUrl)) {
                         requestLimiter.registerRequest(originalUrl);
+                        statsTracker.trackEnqueuedLink(originalUrl, req.url); // Track enqueued URLs
                         return req;
                     }
                     return undefined;

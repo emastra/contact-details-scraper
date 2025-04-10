@@ -1,6 +1,6 @@
 import { CheerioAPI } from 'cheerio';
 import { log, social } from 'crawlee';
-import { Actor } from 'apify';
+import { Actor, KeyValueStore } from 'apify';
 
 export function extractResultFromPage(
   url: string,
@@ -84,6 +84,19 @@ function isValidUrlString(url: string): boolean {
     }
 }
 
+export function isJunkUrl(url: string): boolean {
+  const junkPatterns = [
+    /^(mailto:|tel:)/i,            // Matches mailto: or tel: scheme at the start
+    /\/(privacy|terms|cookie|newsletter|login|signup|register)/i,  // Matches common junk paths
+    /\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/i,  // Matches various document file extensions
+    /\?share=/i,                   // Matches URLs with ?share= query parameter
+    /\/cdn\//i,                    // Matches /cdn/ in the path
+    /\/static\//i                  // Matches /static/ in the path
+  ];
+  
+  return junkPatterns.some((pattern) => pattern.test(url));
+}
+
 export class RequestLimiter {
   private counters: Record<string, number>;
   private limit: number;
@@ -130,35 +143,65 @@ type CrawlStats = {
 };
 
 export class CrawlStatsTracker {
-  private stats: Record<string, CrawlStats> = {};
+  private stats: Record<string, { enqueued: Set<string> }>;
 
-  registerRequest(originalUrl: string, depth: number) {
-      if (!this.stats[originalUrl]) {
-          this.stats[originalUrl] = {
-              totalRequests: 1,
-              maxDepthReached: depth,
-          };
-      } else {
-          const stat = this.stats[originalUrl];
-          stat.totalRequests++;
-          if (depth > stat.maxDepthReached) {
-              stat.maxDepthReached = depth;
-          }
-      }
-  }
-
-  getStats(): Record<string, CrawlStats> {
-      return this.stats;
-  }
-
-  async persist(key: string) {
-      await Actor.setValue(key, this.stats);
+  private constructor(stats: Record<string, { enqueued: Set<string> }>) {
+      this.stats = stats;
   }
 
   static async load(key: string): Promise<CrawlStatsTracker> {
-      const data = (await Actor.getValue<Record<string, CrawlStats>>(key)) || {};
-      const tracker = new CrawlStatsTracker();
-      tracker.stats = data;
-      return tracker;
+      const store = await KeyValueStore.open();
+      const rawStats = await store.getValue(key) as Record<string, { enqueued: string[] }> || {};
+      
+      // Convert enqueued URLs from arrays to Sets for faster lookups
+      const stats = Object.fromEntries(
+          Object.entries(rawStats).map(([key, val]) => [
+              key, 
+              { enqueued: new Set(val.enqueued) }
+          ])
+      );
+      return new CrawlStatsTracker(stats);
+  }
+
+  // Register an enqueued URL for a specific startUrl
+  trackEnqueuedLink(startUrl: string, url: string) {
+      const stat = this.stats[startUrl] ||= { enqueued: new Set() };
+      stat.enqueued.add(url);
+  }
+
+  // Get stats, including a sample of enqueued URLs for each startUrl
+  getStats() {
+      return Object.fromEntries(
+          Object.entries(this.stats).map(([key, val]): [string, { enqueuedCount: number; enqueuedSample: string[] }] => {
+              return [
+                  key, 
+                  {
+                      enqueuedCount: val.enqueued.size, // Count of enqueued links
+                      enqueuedSample: Array.from(val.enqueued).slice(0, 5), // First 5 enqueued URLs
+                  }
+              ];
+          })
+      );
+  }
+
+  // Persist the stats to the key-value store
+  async persist(key: string) {
+      const store = await KeyValueStore.open();
+
+      const serializableStats = Object.fromEntries(
+          Object.entries(this.stats).map(([startUrl, stat]): [string, { enqueued: string[] }] => {
+              return [
+                  startUrl, 
+                  {
+                      enqueued: Array.from(stat.enqueued), // Convert Set to Array for persistence
+                  }
+              ];
+          })
+      );
+
+      // Persist the stats to the key-value store
+      await store.setValue(key, serializableStats);
   }
 }
+
+
