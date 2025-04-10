@@ -1,7 +1,8 @@
 import { Actor } from 'apify';
 import { CheerioCrawler, Dataset, createRequestDebugInfo, social, log } from 'crawlee';
-import * as utils from './utils.js';
+import { getDomain, extractWhatsAppNumbersFromCheerio, sanitizeStartUrls } from './utils.js';
 import { CheerioAPI } from 'cheerio';
+import { RequestLimiter } from './utils.js';
 
 interface Input {
     startUrls: { url: string; immobiliareId: number }[];
@@ -10,8 +11,6 @@ interface Input {
     maxDepth: number;
     sameDomain: boolean;
 }
-
-type RequestCounter = Record<string, { counter: number; wasLogged: boolean }>;
 
 await Actor.init();
 
@@ -22,14 +21,25 @@ log.info(`startUrls has ${startUrls.length} items`);
 
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
 
-const requestsPerStartUrlCounter: RequestCounter = (await Actor.getValue('requests-per-startUrl-counter')) || {};
-if (maxRequestsPerStartUrl) {
-    const persistRequestsPerStartUrlCounter = async () => {
-        await Actor.setValue('requests-per-startUrl-counter', requestsPerStartUrlCounter);
-    };
-    setInterval(persistRequestsPerStartUrlCounter, 60000);
-    Actor.on('migrating', persistRequestsPerStartUrlCounter);
+if (maxRequestsPerCrawl) {
+    log.info(`Max requests per crawl set to ${maxRequestsPerCrawl}`);
 }
+if (maxDepth) {
+    log.info(`Max depth set to ${maxDepth}`);
+}
+if (maxRequestsPerStartUrl) {
+    log.info(`Max requests per start URL set to ${maxRequestsPerStartUrl}`);
+}
+if (sameDomain) {
+    log.info(`Same domain set to ${sameDomain}`);
+}
+// TODO: log proxy configuration
+
+// Load and manage request limit state
+const STORAGE_KEY = 'requests-per-startUrl-counter';
+const requestLimiter = await RequestLimiter.load(STORAGE_KEY, maxRequestsPerStartUrl);
+setInterval(() => requestLimiter.persist(STORAGE_KEY), 60000);
+Actor.on('migrating', () => requestLimiter.persist(STORAGE_KEY));
 
 const requestQueue = await Actor.openRequestQueue();
 
@@ -54,23 +64,15 @@ const crawler = new CheerioCrawler({
                     immobiliareId,
                 },
                 transformRequestFunction: (req) => {
-                    if (maxRequestsPerStartUrl) {
-                        const counterEntry = requestsPerStartUrlCounter[originalUrl];
-                        if (counterEntry.counter < maxRequestsPerStartUrl) {
-                            counterEntry.counter++;
-                            return req;
-                        } else if (!counterEntry.wasLogged) {
-                            log.info(`Reached max requests for start URL: ${originalUrl}`);
-                            counterEntry.wasLogged = true;
-                        }
-                        return undefined;
+                    if (requestLimiter.canRequest(originalUrl)) {
+                        requestLimiter.registerRequest(originalUrl);
+                        return req;
                     }
-                    return req;
+                    return undefined;
                 },
             });
         }
 
-        // Generate and save result
         const url = request.url;
         const html = $.html();
         const result = {
@@ -79,11 +81,11 @@ const crawler = new CheerioCrawler({
             startUrl: originalUrl,
             referrerUrl: referrer,
             currentUrl: url,
-            domain: utils.getDomain(url),
+            domain: getDomain(url),
         };
 
         const socialHandles = social.parseHandlesFromHtml(html, { text: $.text(), $ });
-        const whatsappResult = utils.extractWhatsAppNumbersFromCheerio($ as CheerioAPI);
+        const whatsappResult = extractWhatsAppNumbersFromCheerio($ as CheerioAPI);
 
         Object.assign(result, socialHandles, whatsappResult);
 
@@ -97,32 +99,22 @@ const crawler = new CheerioCrawler({
     },
 });
 
-// Sanitize start URLs
-const cleanStartUrls = utils.sanitizeStartUrls(startUrls);
+const cleanStartUrls = sanitizeStartUrls(startUrls);
 log.info(`cleanStartUrls has ${cleanStartUrls.length} items`);
 
-// Init counters
-if (maxRequestsPerStartUrl) {
-    for (const startUrl of cleanStartUrls) {
-        if (!requestsPerStartUrlCounter[startUrl.url]) {
-            requestsPerStartUrlCounter[startUrl.url] = {
-                counter: 1,
-                wasLogged: false,
-            };
-        }
-    }
-}
+await crawler.addRequests(cleanStartUrls.map(startUrl => {
+    requestLimiter.registerRequest(startUrl.url); // Count initial request
 
-// Add initial requests
-await crawler.addRequests(cleanStartUrls.map(startUrl => ({
-    url: startUrl.url,
-    userData: {
-        depth: 0,
-        referrer: null,
-        originalUrl: startUrl.url,
-        immobiliareId: startUrl.immobiliareId,
-    },
-})));
+    return {
+        url: startUrl.url,
+        userData: {
+            depth: 0,
+            referrer: null,
+            originalUrl: startUrl.url,
+            immobiliareId: startUrl.immobiliareId,
+        },
+    };
+}));
 
 await crawler.run();
 

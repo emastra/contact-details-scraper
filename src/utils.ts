@@ -1,5 +1,6 @@
 import { CheerioAPI } from 'cheerio';
 import { log } from 'crawlee';
+import { Actor } from 'apify';
 
 export function getDomain(url: string): string | null {
     try {
@@ -56,4 +57,44 @@ function isValidUrlString(url: string): boolean {
     } catch {
         return false;
     }
+}
+
+export class RequestLimiter {
+  private counters: Record<string, number>;
+  private limit: number;
+  private loggedUrls: Set<string>;
+
+  constructor(limit: number, initialState: Record<string, number> = {}) {
+      this.limit = limit;
+      this.counters = initialState;
+      this.loggedUrls = new Set();
+  }
+
+  canRequest(url: string): boolean {
+      return (this.counters[url] || 0) < this.limit;
+  }
+
+  registerRequest(url: string): void {
+      const current = this.counters[url] || 0;
+      const updated = current + 1;
+      this.counters[url] = updated;
+
+      if (updated === this.limit && !this.loggedUrls.has(url)) {
+          log.info(`Reached max requests for start URL: ${url}`);
+          this.loggedUrls.add(url);
+      }
+  }
+
+  toJSON(): Record<string, number> {
+      return this.counters;
+  }
+
+  async persist(storageKey: string): Promise<void> {
+      await Actor.setValue(storageKey, this.counters);
+  }
+
+  static async load(storageKey: string, limit: number): Promise<RequestLimiter> {
+      const state = await Actor.getValue<Record<string, number>>(storageKey);
+      return new RequestLimiter(limit, state || {});
+  }
 }
