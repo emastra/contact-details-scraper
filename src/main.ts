@@ -1,4 +1,4 @@
-import { Actor } from 'apify';
+import { Actor, ProxyConfigurationOptions } from 'apify';
 import { CheerioCrawler, Dataset, createRequestDebugInfo, social, log } from 'crawlee';
 import { extractResultFromPage, sanitizeStartUrls } from './utils.js';
 import { CheerioAPI } from 'cheerio';
@@ -9,17 +9,25 @@ interface Input {
     maxRequestsPerStartUrl: number;
     maxRequestsPerCrawl?: number;
     maxDepth: number;
-    sameDomain: boolean;
+    enqueueStrategy: 'all' | 'same-domain' | 'same-hostname' | 'same-origin';
+    proxyConfigurationOptions?: ProxyConfigurationOptions;
 }
 
 await Actor.init();
 
 const input = await Actor.getInput<Input>();
 if (!input) throw new Error('There is no input, please provide some.');
-const { startUrls, maxRequestsPerStartUrl, maxRequestsPerCrawl, maxDepth, sameDomain } = input;
+const { 
+    startUrls, 
+    maxRequestsPerStartUrl, 
+    maxRequestsPerCrawl, 
+    maxDepth, 
+    enqueueStrategy = 'same-domain', 
+    proxyConfigurationOptions 
+} = input;
 log.info(`startUrls has ${startUrls.length} items`);
 
-const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
+const proxyConfiguration = await Actor.createProxyConfiguration(proxyConfigurationOptions);
 
 if (maxRequestsPerCrawl) {
     log.info(`Max requests per crawl set to ${maxRequestsPerCrawl}`);
@@ -30,22 +38,24 @@ if (maxDepth) {
 if (maxRequestsPerStartUrl) {
     log.info(`Max requests per start URL set to ${maxRequestsPerStartUrl}`);
 }
-if (sameDomain) {
-    log.info(`Same domain set to ${sameDomain}`);
+if (enqueueStrategy) {
+    log.info(`Enqueue strategy is set to ${enqueueStrategy}`);
 }
-// TODO: log proxy configuration
+if (proxyConfiguration) {
+    log.info('Proxy configuration is set', { proxyConfiguration });
+}
 
 // Load and manage request limit state
-const STORAGE_KEY = 'requests-per-startUrl-counter';
+const STORAGE_KEY = 'per-startUrl-request-counter';
 const requestLimiter = await RequestLimiter.load(STORAGE_KEY, maxRequestsPerStartUrl);
 setInterval(() => requestLimiter.persist(STORAGE_KEY), 60000);
 Actor.on('migrating', () => requestLimiter.persist(STORAGE_KEY));
 
 // Load and manage crawl stats
-const statsKey = 'per-startUrl-crawl-stats';
-const statsTracker = await CrawlStatsTracker.load(statsKey);
-setInterval(() => statsTracker.persist(statsKey), 60000);
-Actor.on('migrating', () => statsTracker.persist(statsKey));
+const STATS_KEY = 'per-startUrl-crawl-stats';
+const statsTracker = await CrawlStatsTracker.load(STATS_KEY);
+setInterval(() => statsTracker.persist(STATS_KEY), 60000);
+Actor.on('migrating', () => statsTracker.persist(STATS_KEY));
 
 const requestQueue = await Actor.openRequestQueue();
 
@@ -64,7 +74,7 @@ const crawler = new CheerioCrawler({
             await enqueueLinks({
                 selector: 'a',
                 requestQueue,
-                strategy: sameDomain ? 'same-domain' : 'all',
+                strategy: enqueueStrategy,
                 userData: {
                     depth: depth + 1,
                     referrer: request.url,
@@ -124,7 +134,7 @@ if (!Actor.isAtHome()) {
     log.info('Results exported to JSON');
 }
 
-await statsTracker.persist(statsKey);
-log.info('Final crawl stats', statsTracker.getStats());
+await statsTracker.persist(STATS_KEY);
+log.info('Final crawl stats exported to JSON');
 
 await Actor.exit();
