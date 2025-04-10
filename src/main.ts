@@ -1,5 +1,5 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social, log } from 'crawlee';
+import { CheerioCrawler, Dataset, createRequestDebugInfo, social, log } from 'crawlee';
 import * as utils from './utils.js';
 import { CheerioAPI } from 'cheerio';
 
@@ -42,7 +42,6 @@ const crawler = new CheerioCrawler({
 
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
 
-        // Enqueue next-level links using Crawlee’s built-in enqueueLinks
         if (depth < maxDepth) {
             await enqueueLinks({
                 selector: 'a',
