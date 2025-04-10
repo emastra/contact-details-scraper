@@ -1,8 +1,33 @@
 import { CheerioAPI } from 'cheerio';
-import { log } from 'crawlee';
+import { log, social } from 'crawlee';
 import { Actor } from 'apify';
 
-export function getDomain(url: string): string | null {
+export function extractResultFromPage(
+  url: string,
+  $: CheerioAPI,
+  depth: number,
+  immobiliareId: number,
+  originalUrl: string,
+  referrer: string | null
+) {
+  const html = $.html();
+  const domain = getDomain(url);
+  const socialHandles = social.parseHandlesFromHtml(html, { text: $.text(), $ });
+  const whatsappResult = extractWhatsAppNumbersFromCheerio($);
+
+  return {
+      depth,
+      immobiliareId,
+      startUrl: originalUrl,
+      referrerUrl: referrer,
+      currentUrl: url,
+      domain,
+      ...socialHandles,
+      ...whatsappResult,
+  };
+}
+
+function getDomain(url: string): string | null {
     try {
         return new URL(url).hostname;
     } catch (error) {
@@ -10,7 +35,7 @@ export function getDomain(url: string): string | null {
     }
 }
 
-export function extractWhatsAppNumbersFromCheerio($: CheerioAPI): { whatsapps: string[] } {
+function extractWhatsAppNumbersFromCheerio($: CheerioAPI): { whatsapps: string[] } {
     const whatsapps = new Set<string>();
     const regex = /https?:\/\/(?:wa\.me|api\.whatsapp\.com\/send\?phone=)(\d{6,15})/gi;
 
@@ -96,5 +121,44 @@ export class RequestLimiter {
   static async load(storageKey: string, limit: number): Promise<RequestLimiter> {
       const state = await Actor.getValue<Record<string, number>>(storageKey);
       return new RequestLimiter(limit, state || {});
+  }
+}
+
+type CrawlStats = {
+  totalRequests: number;
+  maxDepthReached: number;
+};
+
+export class CrawlStatsTracker {
+  private stats: Record<string, CrawlStats> = {};
+
+  registerRequest(originalUrl: string, depth: number) {
+      if (!this.stats[originalUrl]) {
+          this.stats[originalUrl] = {
+              totalRequests: 1,
+              maxDepthReached: depth,
+          };
+      } else {
+          const stat = this.stats[originalUrl];
+          stat.totalRequests++;
+          if (depth > stat.maxDepthReached) {
+              stat.maxDepthReached = depth;
+          }
+      }
+  }
+
+  getStats(): Record<string, CrawlStats> {
+      return this.stats;
+  }
+
+  async persist(key: string) {
+      await Actor.setValue(key, this.stats);
+  }
+
+  static async load(key: string): Promise<CrawlStatsTracker> {
+      const data = (await Actor.getValue<Record<string, CrawlStats>>(key)) || {};
+      const tracker = new CrawlStatsTracker();
+      tracker.stats = data;
+      return tracker;
   }
 }

@@ -1,8 +1,8 @@
 import { Actor } from 'apify';
 import { CheerioCrawler, Dataset, createRequestDebugInfo, social, log } from 'crawlee';
-import { getDomain, extractWhatsAppNumbersFromCheerio, sanitizeStartUrls } from './utils.js';
+import { extractResultFromPage, sanitizeStartUrls } from './utils.js';
 import { CheerioAPI } from 'cheerio';
-import { RequestLimiter } from './utils.js';
+import { RequestLimiter, CrawlStatsTracker } from './utils.js';
 
 interface Input {
     startUrls: { url: string; immobiliareId: number }[];
@@ -41,6 +41,12 @@ const requestLimiter = await RequestLimiter.load(STORAGE_KEY, maxRequestsPerStar
 setInterval(() => requestLimiter.persist(STORAGE_KEY), 60000);
 Actor.on('migrating', () => requestLimiter.persist(STORAGE_KEY));
 
+// Load and manage crawl stats
+const statsKey = 'per-startUrl-crawl-stats';
+const statsTracker = await CrawlStatsTracker.load(statsKey);
+setInterval(() => statsTracker.persist(statsKey), 60000);
+Actor.on('migrating', () => statsTracker.persist(statsKey));
+
 const requestQueue = await Actor.openRequestQueue();
 
 const crawler = new CheerioCrawler({
@@ -51,6 +57,8 @@ const crawler = new CheerioCrawler({
         log.info('Processing page:', { url: request.loadedUrl });
 
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
+
+        statsTracker.registerRequest(originalUrl, depth);
 
         if (depth < maxDepth) {
             await enqueueLinks({
@@ -73,21 +81,14 @@ const crawler = new CheerioCrawler({
             });
         }
 
-        const url = request.url;
-        const html = $.html();
-        const result = {
+        const result = extractResultFromPage(
+            request.url,
+            $ as CheerioAPI,
             depth,
             immobiliareId,
-            startUrl: originalUrl,
-            referrerUrl: referrer,
-            currentUrl: url,
-            domain: getDomain(url),
-        };
-
-        const socialHandles = social.parseHandlesFromHtml(html, { text: $.text(), $ });
-        const whatsappResult = extractWhatsAppNumbersFromCheerio($ as CheerioAPI);
-
-        Object.assign(result, socialHandles, whatsappResult);
+            originalUrl,
+            referrer
+        );
 
         await Actor.pushData(result);
     },
@@ -122,5 +123,8 @@ if (!Actor.isAtHome()) {
     await Dataset.exportToJSON('results');
     log.info('Results exported to JSON');
 }
+
+await statsTracker.persist(statsKey);
+log.info('Final crawl stats', statsTracker.getStats());
 
 await Actor.exit();
