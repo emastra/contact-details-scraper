@@ -1,11 +1,7 @@
 import { Actor } from 'apify';
 import { CheerioCrawler, Dataset, RequestList, createRequestDebugInfo, social, log } from 'crawlee';
-// import { router } from './routes.js';
 import * as utils from './utils.js';
 import { CheerioAPI } from 'cheerio';
-
-// TODO: Install Playwright dynamically at runtime:
-// https://chatgpt.com/c/67e13f81-a190-8013-bcd9-7410801ffa2a
 
 interface Input {
     startUrls: { url: string; immobiliareId: number }[];
@@ -14,6 +10,8 @@ interface Input {
     maxDepth: number;
     sameDomain: boolean;
 }
+
+type RequestCounter = Record<string, { counter: number; wasLogged: boolean }>;
 
 await Actor.init();
 
@@ -24,8 +22,7 @@ log.info(`startUrls has ${startUrls.length} items`);
 
 const proxyConfiguration = await Actor.createProxyConfiguration(); // TODO: proxyconfig from input
 
-// maxRequestsPerStartUrl stuff
-const requestsPerStartUrlCounter: any = (await Actor.getValue('requests-per-startUrl-counter')) || {};
+const requestsPerStartUrlCounter: RequestCounter = (await Actor.getValue('requests-per-startUrl-counter')) || {};
 if (maxRequestsPerStartUrl) {
     const persistRequestsPerStartUrlCounter = async () => {
         await Actor.setValue('requests-per-startUrl-counter', requestsPerStartUrlCounter);
@@ -34,64 +31,63 @@ if (maxRequestsPerStartUrl) {
     Actor.on('migrating', persistRequestsPerStartUrlCounter);
 }
 
-// I skipped 'porcessing input URLs in case of requestsFromUrl (urls from txt file)' from https://github.com/vdrmota/Social-Media-and-Contact-Info-Extractor/blob/master/src/main.js#L35
-// and normalizeUrls at line 42 of the same file above.
-
 const requestQueue = await Actor.openRequestQueue();
-// const requestList = await RequestList.open('start-urls');
 
 const crawler = new CheerioCrawler({
-    // requestList,
-    requestQueue, 
+    requestQueue,
     proxyConfiguration,
     maxRequestsPerCrawl,
-    // requestHandler: router,
-    requestHandler: async ({ request, $ }) => {
+    requestHandler: async ({ request, $, enqueueLinks }) => {
         log.info('Processing page:', { url: request.loadedUrl });
+
         const { depth, referrer, originalUrl, immobiliareId } = request.userData;
 
-        // Set enqueue options
-        const linksToEnqueueOptions = {
-            $,
-            requestQueue,
-            selector: 'a',
-            sameDomain,
-            urlDomain: utils.getDomain(request.url),
-            currentUrl: request.url, // or request.loadedUrl
-            immobiliareId,
-            originalUrl,
-            depth,
-            // TODO: These options makes the enqueueUrls call stateful. It would be better to refactor this.
-            maxRequestsPerStartUrl,
-            requestsPerStartUrlCounter,
-        };
-
-        // Enqueue all links on the page
+        // Enqueue next-level links using Crawlee’s built-in enqueueLinks
         if (depth < maxDepth) {
-            await utils.enqueueUrls(linksToEnqueueOptions);
+            await enqueueLinks({
+                selector: 'a',
+                requestQueue,
+                strategy: sameDomain ? 'same-domain' : 'all',
+                userData: {
+                    depth: depth + 1,
+                    referrer: request.url,
+                    originalUrl,
+                    immobiliareId,
+                },
+                transformRequestFunction: (req) => {
+                    if (maxRequestsPerStartUrl) {
+                        const counterEntry = requestsPerStartUrlCounter[originalUrl];
+                        if (counterEntry.counter < maxRequestsPerStartUrl) {
+                            counterEntry.counter++;
+                            return req;
+                        } else if (!counterEntry.wasLogged) {
+                            log.info(`Reached max requests for start URL: ${originalUrl}`);
+                            counterEntry.wasLogged = true;
+                        }
+                        return undefined;
+                    }
+                    return req;
+                },
+            });
         }
 
-        // Generate result
-        const url = request.url; // add also request.loadedUrl
+        // Generate and save result
+        const url = request.url;
         const html = $.html();
-
         const result = {
-            // html,
             depth,
             immobiliareId,
             startUrl: originalUrl,
             referrerUrl: referrer,
             currentUrl: url,
-            domain: utils.getDomain(url)
+            domain: utils.getDomain(url),
         };
 
-        // Extract and save handles, emails, phone numbers
         const socialHandles = social.parseHandlesFromHtml(html, { text: $.text(), $ });
         const whatsappResult = utils.extractWhatsAppNumbersFromCheerio($ as CheerioAPI);
 
         Object.assign(result, socialHandles, whatsappResult);
 
-        // Store results
         await Actor.pushData(result);
     },
     failedRequestHandler: async ({ request, error }) => {
@@ -102,11 +98,11 @@ const crawler = new CheerioCrawler({
     },
 });
 
-// sanitize, if invalid urls exists addRequest may fail
+// Sanitize start URLs
 const cleanStartUrls = utils.sanitizeStartUrls(startUrls);
 log.info(`cleanStartUrls has ${cleanStartUrls.length} items`);
 
-// Init counters (if needed)
+// Init counters
 if (maxRequestsPerStartUrl) {
     for (const startUrl of cleanStartUrls) {
         if (!requestsPerStartUrlCounter[startUrl.url]) {
@@ -118,7 +114,7 @@ if (maxRequestsPerStartUrl) {
     }
 }
 
-// Add requests to queue
+// Add initial requests
 await crawler.addRequests(cleanStartUrls.map(startUrl => ({
     url: startUrl.url,
     userData: {
@@ -137,40 +133,3 @@ if (!Actor.isAtHome()) {
 }
 
 await Actor.exit();
-
-
-//
-
-// // function used to find the culprit requests of: https://chatgpt.com/c/67f54c7b-54e8-8013-baf6-00c0a6eb634f
-// async function findBadRequest(requests: any[]) {
-//   if (requests.length === 1) {
-//       try {
-//           await crawler.addRequests(requests);
-//           console.log("✅ No error with:", requests[0]);
-//       } catch (err) {
-//           console.error("❌ Bad request found:", requests[0]);
-//           console.error("Error:", err);
-//       }
-//       return;
-//   }
-
-//   const mid = Math.floor(requests.length / 2);
-//   const firstHalf = requests.slice(0, mid);
-//   const secondHalf = requests.slice(mid);
-
-//   try {
-//       await crawler.addRequests(firstHalf);
-//       console.log(`✅ First half (${firstHalf.length}) passed`);
-//   } catch {
-//       console.warn(`❌ First half (${firstHalf.length}) failed — diving in`);
-//       await findBadRequest(firstHalf);
-//   }
-
-//   try {
-//       await crawler.addRequests(secondHalf);
-//       console.log(`✅ Second half (${secondHalf.length}) passed`);
-//   } catch {
-//       console.warn(`❌ Second half (${secondHalf.length}) failed — diving in`);
-//       await findBadRequest(secondHalf);
-//   }
-// }
